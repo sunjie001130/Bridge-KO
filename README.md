@@ -58,7 +58,7 @@ Performs filtering, normalization checks, keeps shared bacterial taxa.
 
 Outputs the final count matrix used in downstream steps.
 
-aim3_relative_small+big_batch.Rmd
+*aim3_relative_small+big_batch.Rmd*
 
 Converts counts → relative abundance.
 
