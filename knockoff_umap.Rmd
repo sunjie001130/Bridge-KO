@@ -1,0 +1,195 @@
+---
+title: "knockoff_umap"
+output: html_document
+date: "2025-09-29"
+---
+
+# Load required libraries
+```{r, message=FALSE}
+library(igraph)
+library(MASS) 
+library(Matrix)
+library(knockoff)
+library(matrixStats)
+```
+
+
+# read in data
+```{r}
+big_25 <- read.csv("/ix/hpark/Jie/LMM/UMAP_dist_combat2/big_samples_top_25%.csv")
+big_50 <- read.csv("/ix/hpark/Jie/LMM/UMAP_dist_combat2/big_samples_25_50%.csv")
+big_75 <- read.csv("/ix/hpark/Jie/LMM/UMAP_dist_combat2/big_samples_50_75%.csv")
+big_100 <- read.csv("/ix/hpark/Jie/LMM/UMAP_dist_combat2/big_samples_75_100%.csv")
+big <- read.csv("/ix/hpark/Jie/LMM/big_scaled_combat2.csv")
+small <- read.csv("/ix/hpark/Jie/LMM/small_scaled_combat2.csv")
+meta <- read.csv("/ix/hpark/Jie/LMM/clinical_meta.csv")
+
+# make first column as rownames
+rownames(big_25) <- big_25[, 1]   # set row names from first column
+big_25 <- big_25[, -1]             # remove the first column now that it's rownames
+rownames(big_50) <- big_50[, 1]
+big_50 <- big_50[, -1]
+rownames(big_75) <- big_75[, 1]
+big_75 <- big_75[, -1]
+rownames(big_100) <- big_100[, 1]
+big_100 <- big_100[, -1]
+rownames(big) <- big[, 1]   # set row names from first column
+big <- big[, -1]             # remove the first column now that it's rownames
+rownames(small) <- small[, 1]   # set row names from first column
+small <- small[, -1]             # remove the first column now that it's rownames
+all(colnames(small) %in% colnames(big_25))  # should be TRUE
+```
+
+# get scaled big data matrix
+```{r}
+big_25_scaled <- big[rownames(big) %in% rownames(big_25), ]
+big_50_scaled <- big[rownames(big) %in% rownames(big_50), ]
+big_75_scaled <- big[rownames(big) %in% rownames(big_75), ]
+big_100_scaled <- big[rownames(big) %in% rownames(big_100), ]
+```
+
+# generate knockoff data with big data
+```{r}
+# check zero
+zero_var_25 <- which(apply(big_25_scaled, 2, var) == 0) #7
+
+zero_var_50 <- which(apply(big_50_scaled, 2, var) == 0) #0
+big_50_scaled[, zero_var_50] <- big_50_scaled[, zero_var_50] + rnorm(nrow(big_50_scaled), 0, 1e-6)
+zero_var_50 <- which(apply(big_50_scaled, 2, var) == 0)
+
+zero_var_75 <- which(apply(big_75_scaled, 2, var) == 0) #0
+big_75_scaled[, zero_var_75] <- big_75_scaled[, zero_var_75] + rnorm(nrow(big_75_scaled), 0, 1e-6)
+zero_var_75 <- which(apply(big_75_scaled, 2, var) == 0)
+
+zero_var_100 <- which(apply(big_100_scaled, 2, var) == 0) #0
+big_100_scaled[, zero_var_100] <- big_100_scaled[, zero_var_100] + rnorm(nrow(big_100_scaled), 0, 1e-6)
+zero_var_100 <- which(apply(big_100_scaled, 2, var) == 0)
+
+# Calculate the covariance matrix from the big dataset
+Covariance.matrix_big_25 <- cov(big_25_scaled)  # covariance matrix from the large dataset
+Covariance.matrix_big_25 <- Covariance.matrix_big_25 + diag(1e-6, ncol(Covariance.matrix_big_25))  # tiny ridge for positive-definite
+Covariance.matrix_big_50 <- cov(big_50_scaled)
+Covariance.matrix_big_50 <- Covariance.matrix_big_50 + diag(1e-6, ncol(Covariance.matrix_big_50))  # tiny ridge for positive-definite
+Covariance.matrix_big_75 <- cov(big_75_scaled)
+Covariance.matrix_big_75 <- Covariance.matrix_big_75 + diag(1e-6, ncol(Covariance.matrix_big_75))  # tiny ridge for positive-definite
+Covariance.matrix_big_100 <- cov(big_100_scaled)
+Covariance.matrix_big_100 <- Covariance.matrix_big_100 + diag(1e-6, ncol(Covariance.matrix_big_100))  # tiny ridge for positive-definite
+# Generate knockoff data for the small dataset, using the covariance learned from the big dataset
+set.seed(2025)
+
+# create.fixed() uses empirical mean/covariance
+small_mat <- as.matrix(small) # Make small a numeric matrix
+knockoff_small_equi_25 <- create.gaussian(X = small_mat, method = "equi", Sigma = Covariance.matrix_big_25, mu = rep(0, ncol(small_mat)))
+knockoff_small_equi_50 <- create.gaussian(X = small_mat, method = "equi", Sigma = Covariance.matrix_big_50, mu = rep(0, ncol(small_mat)))
+knockoff_small_equi_75 <- create.gaussian(X = small_mat, method = "equi", Sigma = Covariance.matrix_big_75, mu = rep(0, ncol(small_mat)))
+knockoff_small_equi_100 <- create.gaussian(X = small_mat, method = "equi", Sigma = Covariance.matrix_big_100, mu = rep(0, ncol(small_mat)))
+
+
+# Check feature-wise correlation between the original and knockoff features for the small dataset
+diag(cor(small, knockoff_small_equi_25))
+diag(cor(small, knockoff_small_equi_50))
+diag(cor(small, knockoff_small_equi_75))
+diag(cor(small, knockoff_small_equi_100))
+# check NA
+any(is.na(knockoff_small_equi_25))
+any(is.na(knockoff_small_equi_50))
+any(is.na(knockoff_small_equi_75))
+any(is.na(knockoff_small_equi_100))
+
+# Save the knockoff results
+knockoff_names <- paste0("K", 1:ncol(knockoff_small_equi_25)) # Make column names for knockoffs
+combined_equi_25 <- cbind(small, knockoff_small_equi_25) # Combine original + knockoff
+colnames(combined_equi_25) <- c(colnames(small), knockoff_names)
+write.csv(combined_equi_25, file = "~/knockoff_combat/small_with_knockoffs_equi_25.csv", row.names = FALSE) # Save to CSV
+combined_equi_50 <- cbind(small, knockoff_small_equi_50) # Combine original + knockoff
+colnames(combined_equi_50) <- c(colnames(small), knockoff_names)
+write.csv(combined_equi_50, file = "~/knockoff_combat/small_with_knockoffs_equi_50.csv", row.names = FALSE) # Save to CSV
+combined_equi_75 <- cbind(small, knockoff_small_equi_75) # Combine original + knockoff
+colnames(combined_equi_75) <- c(colnames(small), knockoff_names)
+write.csv(combined_equi_75, file = "~/knockoff_combat/small_with_knockoffs_equi_75.csv", row.names = FALSE) # Save to CSV
+combined_equi_100 <- cbind(small, knockoff_small_equi_100) # Combine original + knockoff
+colnames(combined_equi_100) <- c(colnames(small), knockoff_names)
+write.csv(combined_equi_100, file = "~/knockoff_combat/small_with_knockoffs_equi_100.csv", row.names = FALSE) # Save to CSV
+```
+
+# # prepare files for DNN AUC calculation
+# pitt vs non_pitt; train_70 vs test_30
+```{r}
+# 70 vs 30 
+set.seed(0817)
+# Split 70% / 30% samples
+n_samples <- nrow(small)
+train_idx <- sample(1:n_samples, size = floor(0.7 * n_samples), replace = FALSE)
+test_idx <- setdiff(1:n_samples, train_idx)
+
+# Big-cov knockoffs
+train_big_equi_25 <- combined_equi_25[train_idx, ]
+test_big_equi_25  <- combined_equi_25[test_idx, ]
+train_big_equi_50 <- combined_equi_50[train_idx, ]
+test_big_equi_50  <- combined_equi_50[test_idx, ]
+train_big_equi_75 <- combined_equi_75[train_idx, ]
+test_big_equi_75  <- combined_equi_75[test_idx, ]
+train_big_equi_100 <- combined_equi_100[train_idx, ]
+test_big_equi_100 <- combined_equi_100[test_idx, ]
+
+# Split metadata correspondingly
+meta_small_binary <- data.frame(
+  response_binary = ifelse(meta$Study_Clin_Response == "Responder", 1, 0)
+)
+table(meta_small_binary$response_binary)
+meta_train <- meta_small_binary[train_idx, , drop=FALSE]
+meta_test  <- meta_small_binary[test_idx, , drop=FALSE ]
+
+
+# Save CSV for DNN input
+write.csv(train_big_equi_25, "~/knockoff_combat2/train_big_equi_knockoffs_70_25.csv", row.names = FALSE)
+write.csv(test_big_equi_25,  "~/knockoff_combat2/test_big_equi_knockoffs_30_25.csv",  row.names = FALSE)
+write.csv(train_big_equi_50, "~/knockoff_combat2/train_big_equi_knockoffs_70_50.csv", row.names = FALSE)
+write.csv(test_big_equi_50,  "~/knockoff_combat2/test_big_equi_knockoffs_30_50.csv",  row.names = FALSE)
+write.csv(train_big_equi_75, "~/knockoff_combat2/train_big_equi_knockoffs_70_75.csv", row.names = FALSE)
+write.csv(test_big_equi_75,  "~/knockoff_combat2/test_big_equi_knockoffs_30_75.csv",  row.names = FALSE)
+write.csv(train_big_equi_100, "~/knockoff_combat2/train_big_equi_knockoffs_70_100.csv", row.names = FALSE)
+write.csv(test_big_equi_100,  "~/knockoff_combat2/test_big_equi_knockoffs_30_100.csv",  row.names = FALSE)
+
+write.csv(meta_train, "~/knockoff_combat2/meta_train_70_umap.csv", row.names = FALSE)
+write.csv(meta_test,  "~/knockoff_combat2/meta_test_30_umap.csv",  row.names = FALSE)
+```
+
+```{r}
+# pitt vs non-pitt
+pitt_idx <- which(meta$Study == "Pittsburgh")
+nonpitt_idx <- which(meta$Study != "Pittsburgh")
+
+# Big-cov knockoffs
+train_big_equi_25 <- combined_equi_25[pitt_idx, ]
+test_big_equi_25  <- combined_equi_25[nonpitt_idx, ]
+train_big_equi_50 <- combined_equi_50[pitt_idx, ]
+test_big_equi_50  <- combined_equi_50[nonpitt_idx, ]
+train_big_equi_75 <- combined_equi_75[pitt_idx, ]
+test_big_equi_75  <- combined_equi_75[nonpitt_idx, ]
+train_big_equi_100 <- combined_equi_100[pitt_idx, ]
+test_big_equi_100 <- combined_equi_100[nonpitt_idx, ]
+
+# Split metadata correspondingly
+meta_small_binary <- data.frame(
+  response_binary = ifelse(meta$Study_Clin_Response == "Responder", 1, 0)
+)
+table(meta_small_binary$response_binary)
+meta_train <- meta_small_binary[pitt_idx, , drop=FALSE]
+meta_test  <- meta_small_binary[nonpitt_idx, , drop=FALSE ]
+
+
+# Save CSV for DNN input
+write.csv(train_big_equi_25, "~/knockoff_combat2/train_big_equi_knockoffs_pitt_25.csv", row.names = FALSE)
+write.csv(test_big_equi_25,  "~/knockoff_combat2/test_big_equi_knockoffs_nonpitt_25.csv",  row.names = FALSE)
+write.csv(train_big_equi_50, "~/knockoff_combat2/train_big_equi_knockoffs_pitt_50.csv", row.names = FALSE)
+write.csv(test_big_equi_50,  "~/knockoff_combat2/test_big_equi_knockoffs_nonpitt_50.csv",  row.names = FALSE)
+write.csv(train_big_equi_75, "~/knockoff_combat2/train_big_equi_knockoffs_pitt_75.csv", row.names = FALSE)
+write.csv(test_big_equi_75,  "~/knockoff_combat2/test_big_equi_knockoffs_nonpitt_75.csv",  row.names = FALSE)
+write.csv(train_big_equi_100, "~/knockoff_combat2/train_big_equi_knockoffs_pitt_100.csv", row.names = FALSE)
+write.csv(test_big_equi_100,  "~/knockoff_combat2/test_big_equi_knockoffs_nonpitt_100.csv",  row.names = FALSE)
+
+write.csv(meta_train, "~/knockoff_combat2/meta_train_pitt_umap.csv", row.names = FALSE)
+write.csv(meta_test,  "~/knockoff_combat2/meta_test_nonpitt_umap.csv",  row.names = FALSE)
+```
+

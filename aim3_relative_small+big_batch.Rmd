@@ -1,0 +1,111 @@
+---
+title: "aim3_relative_small+big_batch"
+output: html_document
+date: "2025-11-03"
+---
+
+```{r}
+library(sva)
+library(vegan)
+library(umap)
+library(ggplot2)
+```
+
+# prepare data
+```{r}
+# Big data: rows = features (bacteria), columns = samples
+big <- read.csv("/ix/hpark/Jie/LMM/microbiomap_expr.csv", row.names = 1)
+rownames(big) <- big[, 1]
+big <- big[, -1]
+# Small data: raw/original counts or pre-log2
+small <- read.csv("/ix/hpark/Jie/LMM/clinical_expr.csv", row.names = 1)
+rownames(small) <- small[, 1]
+small <- small[, -1]
+# Make sure both datasets have the same features (rows = taxa/genes)
+#common_features <- intersect(rownames(big), rownames(small))
+#big <- big[common_features, ]
+#small <- small[common_features, ]
+```
+
+# calculate relative abundance
+```{r}
+# Convert counts to relative abundance: each column sums to 1
+big_ra   <- sweep(big,   2, colSums(big),   FUN = "/")
+small_ra <- sweep(small, 2, colSums(small), FUN = "/")
+
+# check that columns now sum to 1
+colSums(big_ra)[1:5]
+colSums(small_ra)[1:5]
+
+big <- big_ra
+small <- small_ra
+```
+
+# Combine and log2-transform relative abundance
+```{r}
+# Combine data
+combined <- cbind(big, small)
+# log-transform
+combined_log <- log2(combined + 1e-6)
+# Define batch variable (1 = big, 2 = small)
+batch <- c(rep("big", ncol(big)), rep("small", ncol(small)))
+```
+
+```{r}
+# ─────────────────────────────────────────────
+# BEFORE ComBat
+# ─────────────────────────────────────────────
+# PCA
+pca_before <- prcomp(t(combined_log), center = TRUE, scale. = TRUE)
+pca_df_before <- data.frame(pca_before$x[, 1:2], batch = batch)
+pc_var_before <- round(100 * summary(pca_before)$importance[2, 1:2], 2)
+
+p1 <- ggplot(pca_df_before, aes(PC1, PC2, color = batch)) +
+  geom_point(alpha = 0.6, size = 2) +
+  xlab(paste0("PC1 (", pc_var_before[1], "%)")) +
+  ylab(paste0("PC2 (", pc_var_before[2], "%)")) +
+  ggtitle("PCA before ComBat") +
+  theme_minimal()
+p1
+```
+
+
+```{r}
+# Run ComBat (no biological covariates)
+combat_corrected <- ComBat(
+  dat = as.matrix(combined_log),
+  batch = batch,
+  par.prior = TRUE,
+  prior.plots = FALSE
+)
+
+# Split back into big/small (if needed)
+combat_big <- combat_corrected[, batch == "big"]
+combat_small <- combat_corrected[, batch == "small"]
+```
+
+```{r}
+# ─────────────────────────────────────────────
+# AFTER ComBat
+# ─────────────────────────────────────────────
+# PCA
+pca_after <- prcomp(t(combat_corrected), center = TRUE, scale. = TRUE)
+pca_df_after <- data.frame(pca_after$x[, 1:2], batch = batch)
+pc_var_after <- round(100 * summary(pca_after)$importance[2, 1:2], 2)
+
+p3 <- ggplot(pca_df_after, aes(PC1, PC2, color = batch)) +
+  geom_point(alpha = 0.6, size = 2) +
+  xlab(paste0("PC1 (", pc_var_after[1], "%)")) +
+  ylab(paste0("PC2 (", pc_var_after[2], "%)")) +
+  ggtitle("PCA after ComBat") +
+  theme_minimal()
+p3
+```
+
+
+# save files
+```{r}
+write.csv(combat_big, "big_after_ComBat2_ra.csv")
+write.csv(combat_small, "small_after_ComBat2_ra.csv")
+```
+
