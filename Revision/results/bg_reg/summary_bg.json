@@ -1,0 +1,30 @@
+{
+  "arm": "PCA, ComBat-both, top-25% (headline)",
+  "n_seeds": 10,
+  "lambda_grid": [
+    0.0,
+    0.01,
+    0.1,
+    0.5,
+    1.0
+  ],
+  "margin_grid": [
+    0.0,
+    0.05
+  ],
+  "tuned_mean_auc": 0.6393772893772893,
+  "tuned_std_auc": 0.05309112827097843,
+  "baseline_mean_auc": 0.6787545787545788,
+  "baseline_std_auc": 0.03867202130467153,
+  "lambda_bg_star_counts": {
+    "0.01": 3,
+    "0.5": 3,
+    "0.1": 2,
+    "0.0": 1,
+    "1.0": 1
+  },
+  "margin_star_counts": {
+    "0.05": 5,
+    "0.0": 5
+  }
+}
